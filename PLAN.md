@@ -177,7 +177,7 @@ Create/complete/reopen/edit title/edit due/edit description/delete in each of H,
 - Risks: order-only edits do not change entity state, so they are only noticed on the 5-minute poll; new items land at the end of the other lists and are then moved; iCloud order may be unmovable, so Home Assistant/Google may end up ordered differently from iCloud. Document this clearly.
 - Make order sync an option (default on) so it can be disabled if it causes churn. Treat it as a late implementation phase, after core field sync is solid.
 
-### 7.3 Duplicate titles: what I meant
+### 7.3 Duplicate titles: what I meant (CONFIRMED by user: Nth-duplicate pairing)
 On first run or forced rebuild we link items across lists by title. If a list holds two items called "Milk", we cannot know which "Milk" on list A is which on list B. Your rule: they are separate items. To link them anyway, pair them one-to-one: the first "Milk" on each side, the second "Milk" on each side, and so on, using a stable ordering (list order, then due date). The pairing may be "wrong" in that the first Milk in Google might have been meant as the second in iCloud, but since both are called Milk the only visible effect is that description/due date follow the tiebreak winner for that pair. Extra duplicates (3 on one side, 2 on another) get a new counterpart created for the surplus. After linking, identity is by stored IDs, so it never re-pairs.
 
 ### 7.4 Storage: more for reconciliation and debugging
@@ -204,7 +204,7 @@ Domain names are permanent once users install, so choose before coding. HA domai
 ### 7.6 Remaining questions
 1. Pick a name (7.5).
 2. Order sync (7.2): OK that iCloud (and any endpoint without move support) keeps its own order, and that order-only edits are detected only on the 5-minute poll?
-3. Duplicate pairing (7.3): OK as described?
+3. ~~Duplicate pairing (7.3)~~: confirmed, Nth-duplicate pairing.
 4. Diagnostics (7.4): is redacting item text by default fine?
 5. Do you want a Home Assistant **sensor/binary_sensor** per group (last sync time, status, pending conflicts) in v1, or only services/events and diagnostics?
 6. Do you want persistent notifications / repair issues when the mass-delete guard trips or an endpoint is unavailable for a long time?
