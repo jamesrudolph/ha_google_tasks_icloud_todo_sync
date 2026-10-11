@@ -16,6 +16,7 @@ DEFAULT_PAIR_STATE: dict[str, Any] = {
         "icloud_to_google": {},
     },
     "completion_history": {},
+    "status_snapshot": {},
     "last_sync_at": None,
 }
 
@@ -50,6 +51,7 @@ class SyncStore:
         pair_state["mapping"].setdefault("google_to_icloud", {})
         pair_state["mapping"].setdefault("icloud_to_google", {})
         pair_state.setdefault("completion_history", {})
+        pair_state.setdefault("status_snapshot", {})
         pair_state.setdefault("last_sync_at", None)
         return pair_state
 

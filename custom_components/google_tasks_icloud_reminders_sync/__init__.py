@@ -22,6 +22,7 @@ from .coordinator import PairSyncManager, build_manager_config
 from .storage import SyncStore
 
 SERVICE_SCHEMA = vol.Schema({vol.Optional(CONF_PAIR_ID): str})
+TARGETED_SERVICE_SCHEMA = vol.Schema({vol.Required(CONF_PAIR_ID): str})
 
 
 @dataclass(slots=True)
@@ -97,8 +98,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
             await hass.config_entries.async_reload(entry.entry_id)
 
     hass.services.async_register(DOMAIN, SERVICE_SYNC_NOW, handle_sync_now, schema=SERVICE_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_RESET_PAIR, handle_reset_pair, schema=SERVICE_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_RESYNC_PAIR, handle_resync_pair, schema=SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_RESET_PAIR, handle_reset_pair, schema=TARGETED_SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_RESYNC_PAIR, handle_resync_pair, schema=TARGETED_SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_RELOAD, handle_reload)
 
 

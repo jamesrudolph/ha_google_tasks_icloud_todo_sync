@@ -47,8 +47,8 @@ DIRECTION_OPTIONS = [
 ]
 
 
-def _build_schema(defaults: dict[str, Any]) -> vol.Schema:
-    return vol.Schema(
+def _build_schema(defaults: dict[str, Any], *, include_entities: bool = True) -> vol.Schema:
+    schema = vol.Schema(
         {
             vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): vol.All(
                 str, vol.Length(min=1)
@@ -99,6 +99,15 @@ def _build_schema(defaults: dict[str, Any]) -> vol.Schema:
             ): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=0, max=300, mode=selector.NumberSelectorMode.BOX)
             ),
+        }
+    )
+    if include_entities:
+        return schema
+    return vol.Schema(
+        {
+            key: value
+            for key, value in schema.schema.items()
+            if key not in (CONF_GOOGLE_ENTITY_ID, CONF_ICLOUD_ENTITY_ID)
         }
     )
 
@@ -159,7 +168,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Manage the pair settings."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            errors = _validate_input(user_input)
             pair_id = self.config_entry.data[CONF_PAIR_ID]
             if any(
                 entry.entry_id != self.config_entry.entry_id
@@ -171,6 +179,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 data = dict(self.config_entry.data)
                 data.update(user_input)
                 data[CONF_PAIR_ID] = pair_id
+                data[CONF_GOOGLE_ENTITY_ID] = self.config_entry.data[CONF_GOOGLE_ENTITY_ID]
+                data[CONF_ICLOUD_ENTITY_ID] = self.config_entry.data[CONF_ICLOUD_ENTITY_ID]
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     title=user_input[CONF_NAME],
@@ -182,6 +192,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         defaults.update(self.config_entry.options)
         return self.async_show_form(
             step_id="init",
-            data_schema=_build_schema(defaults),
+            data_schema=_build_schema(defaults, include_entities=False),
             errors=errors,
         )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 import logging
@@ -10,7 +11,11 @@ from typing import Any
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -50,6 +55,7 @@ FEATURE_SET_DUE_DATE = 16
 FEATURE_SET_DUE_DATETIME = 32
 FEATURE_SET_DESCRIPTION = 64
 FEATURE_DELETE = 2
+POLL_INTERVAL = timedelta(minutes=5)
 
 
 @dataclass(slots=True)
@@ -85,6 +91,10 @@ class PairSyncManager:
         self.config = config
         self._remove_listener = None
         self._scheduled_unsub = None
+        self._poll_unsub = None
+        self._tasks: set[asyncio.Task] = set()
+        self._stopped = False
+        self._suppress_trailing = False
         self._syncing = False
         self._pending_sync = False
         self._ignore_changes_until = 0.0
@@ -117,26 +127,58 @@ class PairSyncManager:
             [self.google_entity_id, self.icloud_entity_id],
             self._async_handle_state_change,
         )
+        if self.config[CONF_SYNC_DUE_DATES] or self.config[CONF_SYNC_DESCRIPTIONS]:
+            # Todo entity state changes do not expose due-date or description edits.
+            self._poll_unsub = async_track_time_interval(
+                self.hass, self._async_handle_poll, POLL_INTERVAL
+            )
         await self.async_schedule_sync("startup", immediate=True)
 
     async def async_stop(self) -> None:
-        """Stop listeners and pending work."""
+        """Stop listeners, pending work, and any running sync."""
+        self._stopped = True
         if self._scheduled_unsub is not None:
             self._scheduled_unsub()
             self._scheduled_unsub = None
+        if self._poll_unsub is not None:
+            self._poll_unsub()
+            self._poll_unsub = None
         if self._remove_listener is not None:
             self._remove_listener()
             self._remove_listener = None
+        tasks = list(self._tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    @callback
+    def _async_start_sync_task(self, reason: str) -> None:
+        """Run a tracked sync task so it can be cancelled on stop."""
+        if self._stopped:
+            return
+        task = self.hass.async_create_task(self.async_sync(reason))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    @callback
+    def _async_handle_poll(self, _: Any) -> None:
+        """Periodically sync to pick up metadata-only edits."""
+        self._async_start_sync_task("poll")
 
     @callback
     def _async_handle_state_change(self, event: Event) -> None:
         """Debounce sync work for source entity changes."""
-        if dt_util.utcnow().timestamp() < self._ignore_changes_until:
+        in_ignore_window = dt_util.utcnow().timestamp() < self._ignore_changes_until
+        if in_ignore_window and self._suppress_trailing:
             return
-        self.hass.async_create_task(self.async_schedule_sync("state_changed"))
+        reason = "trailing" if in_ignore_window else "state_changed"
+        self.hass.async_create_task(self.async_schedule_sync(reason))
 
     async def async_schedule_sync(self, reason: str, immediate: bool = False) -> None:
         """Schedule a sync for this pair."""
+        if self._stopped:
+            return
         if self._scheduled_unsub is not None:
             self._scheduled_unsub()
             self._scheduled_unsub = None
@@ -146,7 +188,7 @@ class PairSyncManager:
         @callback
         def _run(_: Any) -> None:
             self._scheduled_unsub = None
-            self.hass.async_create_task(self.async_sync(reason))
+            self._async_start_sync_task(reason)
 
         self._scheduled_unsub = async_call_later(self.hass, delay, _run)
 
@@ -155,6 +197,7 @@ class PairSyncManager:
         pair_state = await self.store.async_get_pair_state(self.entry_id)
         pair_state["mapping"] = {"google_to_icloud": {}, "icloud_to_google": {}}
         pair_state["completion_history"] = {}
+        pair_state["status_snapshot"] = {}
         await self.store.async_set_pair_state(self.entry_id, pair_state)
 
     async def async_sync(self, reason: str = "manual") -> None:
@@ -164,6 +207,7 @@ class PairSyncManager:
             return
 
         self._syncing = True
+        self._suppress_trailing = reason == "trailing"
         self._ignore_changes_until = dt_util.utcnow().timestamp() + max(
             1, int(self.config.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS))
         )
@@ -204,65 +248,41 @@ class PairSyncManager:
                     self._reconcile_mappings(pair_state, google_tasks, icloud_tasks)
 
             if self.config[CONF_SYNC_COMPLETION]:
-                if direction in (DIRECTION_BOTH, DIRECTION_GOOGLE_TO_ICLOUD):
-                    stats["items_completed"] += await self._async_sync_completion(
-                        pair_state,
-                        google_tasks,
-                        icloud_tasks,
-                        "google",
-                        "icloud",
-                    )
-                if direction in (DIRECTION_BOTH, DIRECTION_ICLOUD_TO_GOOGLE):
-                    stats["items_completed"] += await self._async_sync_completion(
-                        pair_state,
-                        icloud_tasks,
-                        google_tasks,
-                        "icloud",
-                        "google",
-                    )
+                stats["items_completed"] += await self._async_sync_completion(
+                    pair_state, google_tasks, icloud_tasks, direction
+                )
 
-            if self.config[CONF_SYNC_DUE_DATES]:
+            for enabled, sync_due, sync_description in (
+                (self.config[CONF_SYNC_DUE_DATES], True, False),
+                (self.config[CONF_SYNC_DESCRIPTIONS], False, True),
+            ):
+                if not enabled:
+                    continue
+                updated_uids: set[str] = set()
                 if direction in (DIRECTION_BOTH, DIRECTION_GOOGLE_TO_ICLOUD):
-                    await self._async_sync_metadata(
+                    updated_uids = await self._async_sync_metadata(
                         pair_state,
                         google_tasks,
                         icloud_tasks,
                         "google",
                         "icloud",
-                        sync_due=True,
-                        sync_description=False,
+                        sync_due=sync_due,
+                        sync_description=sync_description,
+                        allow_clear=direction != DIRECTION_BOTH,
+                        skip_source_uids=set(),
                     )
                 if direction in (DIRECTION_BOTH, DIRECTION_ICLOUD_TO_GOOGLE):
+                    # Google wins conflicts in bidirectional mode: skip iCloud tasks just updated.
                     await self._async_sync_metadata(
                         pair_state,
                         icloud_tasks,
                         google_tasks,
                         "icloud",
                         "google",
-                        sync_due=True,
-                        sync_description=False,
-                    )
-
-            if self.config[CONF_SYNC_DESCRIPTIONS]:
-                if direction in (DIRECTION_BOTH, DIRECTION_GOOGLE_TO_ICLOUD):
-                    await self._async_sync_metadata(
-                        pair_state,
-                        google_tasks,
-                        icloud_tasks,
-                        "google",
-                        "icloud",
-                        sync_due=False,
-                        sync_description=True,
-                    )
-                if direction in (DIRECTION_BOTH, DIRECTION_ICLOUD_TO_GOOGLE):
-                    await self._async_sync_metadata(
-                        pair_state,
-                        icloud_tasks,
-                        google_tasks,
-                        "icloud",
-                        "google",
-                        sync_due=False,
-                        sync_description=True,
+                        sync_due=sync_due,
+                        sync_description=sync_description,
+                        allow_clear=direction != DIRECTION_BOTH,
+                        skip_source_uids=updated_uids,
                     )
 
             stats["items_removed"] += await self._async_cleanup(pair_state, google_tasks)
@@ -299,7 +319,7 @@ class PairSyncManager:
             self._ignore_changes_until = dt_util.utcnow().timestamp() + max(
                 1, int(self.config.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS))
             )
-            if self._pending_sync:
+            if self._pending_sync and not self._stopped:
                 self._pending_sync = False
                 await self.async_schedule_sync("pending")
 
@@ -349,24 +369,28 @@ class PairSyncManager:
         google_tasks: list[NormalizedTask],
         icloud_tasks: list[NormalizedTask],
     ) -> None:
-        """Repair mappings by unique summary fallback."""
-        summary_index = _build_summary_index(icloud_tasks)
+        """Repair mappings by summary fallback, only for summaries unique on both sides."""
+        google_index = _build_summary_index(google_tasks)
+        icloud_index = _build_summary_index(icloud_tasks)
         for google_task in google_tasks:
             if not google_task.uid:
                 continue
             if pair_state["mapping"]["google_to_icloud"].get(google_task.uid):
                 continue
-            match = _unique_summary_match(summary_index, google_task.canonical_summary)
+            if len(google_index.get(google_task.canonical_summary, [])) != 1:
+                continue
+            match = _unique_summary_match(icloud_index, google_task.canonical_summary)
             if match and match.uid:
                 self._store_mapping(pair_state, google_task.uid, match.uid)
 
-        summary_index = _build_summary_index(google_tasks)
         for icloud_task in icloud_tasks:
             if not icloud_task.uid:
                 continue
             if pair_state["mapping"]["icloud_to_google"].get(icloud_task.uid):
                 continue
-            match = _unique_summary_match(summary_index, icloud_task.canonical_summary)
+            if len(icloud_index.get(icloud_task.canonical_summary, [])) != 1:
+                continue
+            match = _unique_summary_match(google_index, icloud_task.canonical_summary)
             if match and match.uid:
                 self._store_mapping(pair_state, match.uid, icloud_task.uid)
 
@@ -385,14 +409,12 @@ class PairSyncManager:
         for source_task in source_tasks:
             if source_task.status != STATUS_NEEDS_ACTION or not source_task.summary:
                 continue
-            if self._find_mapped_task(pair_state, source_task, destination_tasks, source_name):
+            if self._find_mapped_task(
+                pair_state, source_task, source_tasks, destination_tasks, source_name
+            ):
                 continue
-
-            summary_match = _unique_summary_match(
-                destination_index, source_task.canonical_summary
-            )
-            if summary_match and source_task.uid and summary_match.uid:
-                self._store_mapping(pair_state, *(self._mapping_args(source_name, source_task.uid, summary_match.uid)))
+            if destination_index.get(source_task.canonical_summary):
+                # Ambiguous matches cannot be mapped; creating more would duplicate forever.
                 continue
 
             try:
@@ -403,16 +425,6 @@ class PairSyncManager:
                 )
                 continue
 
-            refreshed = await self._async_fetch_tasks(
-                self._entity_id_for_source(destination_name), destination_name
-            )
-            destination_tasks[:] = refreshed
-            destination_index = _build_summary_index(refreshed)
-            summary_match = _unique_summary_match(
-                destination_index, source_task.canonical_summary
-            )
-            if source_task.uid and summary_match and summary_match.uid:
-                self._store_mapping(pair_state, *(self._mapping_args(source_name, source_task.uid, summary_match.uid)))
             added += 1
             self.hass.bus.async_fire(
                 EVENT_ITEM_ADDED,
@@ -454,37 +466,73 @@ class PairSyncManager:
     async def _async_sync_completion(
         self,
         pair_state: dict[str, Any],
-        source_tasks: list[NormalizedTask],
-        destination_tasks: list[NormalizedTask],
-        source_name: str,
-        destination_name: str,
+        google_tasks: list[NormalizedTask],
+        icloud_tasks: list[NormalizedTask],
+        direction: str,
     ) -> int:
-        """Propagate completed status for matched tasks."""
+        """Propagate completed and reopened status for matched tasks.
+
+        In bidirectional mode the side that changed since the last synced
+        status wins; if both changed (or nothing is known) completed wins.
+        """
         completed_count = 0
-        for source_task in source_tasks:
-            if source_task.status != STATUS_COMPLETED:
+        snapshot = pair_state["status_snapshot"]
+        for google_task in google_tasks:
+            if not google_task.uid:
                 continue
-            destination_task = self._find_mapped_task(
-                pair_state, source_task, destination_tasks, source_name
+            icloud_task = self._find_mapped_task(
+                pair_state, google_task, google_tasks, icloud_tasks, "google"
             )
-            if not destination_task or destination_task.status == STATUS_COMPLETED:
+            if not icloud_task:
                 continue
+            if google_task.status == icloud_task.status:
+                snapshot[google_task.uid] = google_task.status
+                continue
+
+            if direction == DIRECTION_GOOGLE_TO_ICLOUD:
+                google_wins = True
+            elif direction == DIRECTION_ICLOUD_TO_GOOGLE:
+                google_wins = False
+            else:
+                last_status = snapshot.get(google_task.uid)
+                if last_status == icloud_task.status:
+                    google_wins = True
+                elif last_status == google_task.status:
+                    google_wins = False
+                else:
+                    google_wins = google_task.status == STATUS_COMPLETED
+
+            if google_wins:
+                source_task, destination_task = google_task, icloud_task
+                source_name, destination_name = "google", "icloud"
+            else:
+                source_task, destination_task = icloud_task, google_task
+                source_name, destination_name = "icloud", "google"
 
             try:
                 await self._async_update_task(
                     destination_name,
                     destination_task,
-                    {"status": STATUS_COMPLETED},
+                    {"status": source_task.status},
                 )
             except Exception:
                 _LOGGER.exception(
-                    "Failed to complete task '%s' for pair %s",
+                    "Failed to update status of task '%s' for pair %s",
                     source_task.summary,
                     self.pair_id,
                 )
                 continue
 
+            snapshot[google_task.uid] = source_task.status
+            if source_task.status != STATUS_COMPLETED:
+                for task in (source_task, destination_task):
+                    pair_state["completion_history"].pop(
+                        f"{task.source}:{task.uid or task.summary}", None
+                    )
+                continue
+
             self._record_completion(pair_state, source_task)
+            self._record_completion(pair_state, destination_task)
             completed_count += 1
             self.hass.bus.async_fire(
                 EVENT_ITEM_COMPLETED,
@@ -508,27 +556,40 @@ class PairSyncManager:
         *,
         sync_due: bool,
         sync_description: bool,
-    ) -> None:
-        """Copy due dates or descriptions when missing or different."""
+        allow_clear: bool,
+        skip_source_uids: set[str],
+    ) -> set[str]:
+        """Copy due dates or descriptions when different; return updated destination uids.
+
+        Cleared source values only propagate when allow_clear is set (one-way
+        sync), so bidirectional sync never wipes a value set on the other side.
+        """
+        updated_uids: set[str] = set()
         destination_entity_id = self._entity_id_for_source(destination_name)
         destination_state = self.hass.states.get(destination_entity_id)
         if destination_state is None:
-            return
+            return updated_uids
         supported_features = int(destination_state.attributes.get("supported_features", 0))
 
         for source_task in source_tasks:
+            if source_task.uid and source_task.uid in skip_source_uids:
+                continue
             destination_task = self._find_mapped_task(
-                pair_state, source_task, destination_tasks, source_name
+                pair_state, source_task, source_tasks, destination_tasks, source_name
             )
             if not destination_task:
                 continue
 
             update: dict[str, Any] = {}
-            if sync_due and source_task.due is not None and not _same_due(source_task.due, destination_task.due):
+            if (
+                sync_due
+                and (source_task.due is not None or allow_clear)
+                and not _same_due(source_task.due, destination_task.due)
+            ):
                 self._apply_due_to_service_data(update, supported_features, source_task.due)
             if (
                 sync_description
-                and source_task.description
+                and (source_task.description or allow_clear)
                 and source_task.description != destination_task.description
                 and supported_features & FEATURE_SET_DESCRIPTION
             ):
@@ -544,6 +605,10 @@ class PairSyncManager:
                     source_task.summary,
                     self.pair_id,
                 )
+                continue
+            if destination_task.uid:
+                updated_uids.add(destination_task.uid)
+        return updated_uids
 
     async def _async_cleanup(
         self, pair_state: dict[str, Any], tasks: list[NormalizedTask]
@@ -615,9 +680,15 @@ class PairSyncManager:
         )
 
     def _apply_due_to_service_data(
-        self, data: dict[str, Any], supported_features: int, due: date | datetime
+        self, data: dict[str, Any], supported_features: int, due: date | datetime | None
     ) -> None:
         """Map normalized due values to supported service fields."""
+        if due is None:
+            if supported_features & FEATURE_SET_DUE_DATE:
+                data["due_date"] = None
+            elif supported_features & FEATURE_SET_DUE_DATETIME:
+                data["due_datetime"] = None
+            return
         if isinstance(due, datetime):
             if supported_features & FEATURE_SET_DUE_DATETIME:
                 data["due_datetime"] = due
@@ -637,10 +708,14 @@ class PairSyncManager:
         self,
         pair_state: dict[str, Any],
         source_task: NormalizedTask,
+        source_tasks: list[NormalizedTask],
         destination_tasks: list[NormalizedTask],
         source_name: str,
     ) -> NormalizedTask | None:
-        """Find a destination task using mappings then summary fallback."""
+        """Find a destination task using mappings then summary fallback.
+
+        The fallback requires the summary to be unique on both sides.
+        """
         destination_uid = None
         if source_task.uid:
             mapping_key = "google_to_icloud" if source_name == "google" else "icloud_to_google"
@@ -651,8 +726,11 @@ class PairSyncManager:
                     return task
             if source_task.uid:
                 self._remove_stale_mapping(pair_state, source_name, source_task.uid)
+        canonical_summary = source_task.canonical_summary
+        if len(_build_summary_index(source_tasks).get(canonical_summary, [])) != 1:
+            return None
         summary_match = _unique_summary_match(
-            _build_summary_index(destination_tasks), source_task.canonical_summary
+            _build_summary_index(destination_tasks), canonical_summary
         )
         if summary_match and source_task.uid and summary_match.uid:
             self._store_mapping(pair_state, *(self._mapping_args(source_name, source_task.uid, summary_match.uid)))
@@ -707,12 +785,14 @@ class PairSyncManager:
         completion_history.pop(key, None)
 
         if task.source == "google" and task.uid:
+            pair_state["status_snapshot"].pop(task.uid, None)
             icloud_uid = mapping["google_to_icloud"].pop(task.uid, None)
             if icloud_uid:
                 mapping["icloud_to_google"].pop(icloud_uid, None)
         elif task.source == "icloud" and task.uid:
             google_uid = mapping["icloud_to_google"].pop(task.uid, None)
             if google_uid:
+                pair_state["status_snapshot"].pop(google_uid, None)
                 mapping["google_to_icloud"].pop(google_uid, None)
 
     def _entity_id_for_source(self, source_name: str) -> str:
@@ -769,21 +849,22 @@ def _unique_summary_match(
 def _same_due(first: date | datetime | None, second: date | datetime | None) -> bool:
     if first is None or second is None:
         return first is second
-    if isinstance(first, datetime) and isinstance(second, datetime):
-        return first == second
-    if isinstance(first, date) and isinstance(second, date):
-        return first == second
-    if isinstance(first, datetime):
-        return first.date() == second
-    if isinstance(second, datetime):
-        return first == second.date()
-    return False
+    first_is_datetime = isinstance(first, datetime)
+    if first_is_datetime != isinstance(second, datetime):
+        return _due_date(first) == _due_date(second)
+    return first == second
+
+
+def _due_date(value: date | datetime) -> date:
+    if isinstance(value, datetime):
+        return dt_util.as_local(value).date() if value.tzinfo else value.date()
+    return value
 
 
 def _parse_due(value: str | None) -> date | datetime | None:
     if not value:
         return None
-    parsed_datetime = dt_util.parse_datetime(value)
-    if parsed_datetime is not None:
-        return parsed_datetime
-    return dt_util.parse_date(value)
+    parsed_date = dt_util.parse_date(value)
+    if parsed_date is not None:
+        return parsed_date
+    return dt_util.parse_datetime(value)
