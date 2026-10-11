@@ -7,9 +7,9 @@ from datetime import date, datetime, time, timedelta
 import logging
 from typing import Any
 
-from homeassistant.const import ATTR_ENTITY_ID, SERVICE_RELOAD
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -29,7 +29,6 @@ from .const import (
     DIRECTION_BOTH,
     DIRECTION_GOOGLE_TO_ICLOUD,
     DIRECTION_ICLOUD_TO_GOOGLE,
-    DOMAIN,
     EVENT_ITEM_ADDED,
     EVENT_ITEM_COMPLETED,
     EVENT_ITEM_REMOVED,
@@ -50,6 +49,7 @@ STATUS_NEEDS_ACTION = "needs_action"
 FEATURE_SET_DUE_DATE = 16
 FEATURE_SET_DUE_DATETIME = 32
 FEATURE_SET_DESCRIPTION = 64
+FEATURE_DELETE = 2
 
 
 @dataclass(slots=True)
@@ -406,6 +406,7 @@ class PairSyncManager:
             refreshed = await self._async_fetch_tasks(
                 self._entity_id_for_source(destination_name), destination_name
             )
+            destination_tasks[:] = refreshed
             destination_index = _build_summary_index(refreshed)
             summary_match = _unique_summary_match(
                 destination_index, source_task.canonical_summary
@@ -553,6 +554,9 @@ class PairSyncManager:
 
         removed = 0
         cutoff = dt_util.utcnow() - timedelta(days=int(self.config[CONF_CLEANUP_DAYS]))
+        entity_state = self.hass.states.get(tasks[0].entity_id) if tasks else None
+        if entity_state is None or not int(entity_state.attributes.get("supported_features", 0)) & FEATURE_DELETE:
+            return 0
         for task in tasks:
             if task.status != STATUS_COMPLETED:
                 continue
@@ -645,6 +649,8 @@ class PairSyncManager:
             for task in destination_tasks:
                 if task.uid == destination_uid:
                     return task
+            if source_task.uid:
+                self._remove_stale_mapping(pair_state, source_name, source_task.uid)
         summary_match = _unique_summary_match(
             _build_summary_index(destination_tasks), source_task.canonical_summary
         )
@@ -664,6 +670,19 @@ class PairSyncManager:
         """Persist a bidirectional mapping."""
         pair_state["mapping"]["google_to_icloud"][google_uid] = icloud_uid
         pair_state["mapping"]["icloud_to_google"][icloud_uid] = google_uid
+
+    def _remove_stale_mapping(
+        self, pair_state: dict[str, Any], source_name: str, source_uid: str
+    ) -> None:
+        """Remove one stale mapping before fallback matching."""
+        if source_name == "google":
+            icloud_uid = pair_state["mapping"]["google_to_icloud"].pop(source_uid, None)
+            if icloud_uid:
+                pair_state["mapping"]["icloud_to_google"].pop(icloud_uid, None)
+            return
+        google_uid = pair_state["mapping"]["icloud_to_google"].pop(source_uid, None)
+        if google_uid:
+            pair_state["mapping"]["google_to_icloud"].pop(google_uid, None)
 
     def _record_completion(self, pair_state: dict[str, Any], task: NormalizedTask) -> None:
         """Remember a completion timestamp for cleanup fallback."""

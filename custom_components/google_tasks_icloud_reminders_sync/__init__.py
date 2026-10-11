@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import logging
-from typing import Any
 
 import voluptuous as vol
 
@@ -22,8 +20,6 @@ from .const import (
 )
 from .coordinator import PairSyncManager, build_manager_config
 from .storage import SyncStore
-
-_LOGGER = logging.getLogger(__name__)
 
 SERVICE_SCHEMA = vol.Schema({vol.Optional(CONF_PAIR_ID): str})
 
@@ -47,6 +43,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up one configured sync pair."""
     data: IntegrationData = hass.data[DOMAIN]
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     manager = PairSyncManager(
         hass,
         data.store,
@@ -70,6 +67,11 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove storage for a deleted config entry."""
     data: IntegrationData = hass.data[DOMAIN]
     await data.store.async_delete_pair_state(entry.entry_id)
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry after config flow updates."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 def _async_register_services(hass: HomeAssistant) -> None:

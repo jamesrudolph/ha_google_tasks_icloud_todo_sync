@@ -20,7 +20,9 @@
       }
     },
     "error": {
-      "same_entity": "Choose two different to-do entities."
+      "same_entity": "Choose two different to-do entities.",
+      "invalid_name": "Enter a name that can be converted into a pair ID.",
+      "duplicate_pair_id": "A pair with this name already exists."
     },
     "abort": {
       "already_configured": "This pair is already configured."

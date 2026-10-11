@@ -50,7 +50,9 @@ DIRECTION_OPTIONS = [
 def _build_schema(defaults: dict[str, Any]) -> vol.Schema:
     return vol.Schema(
         {
-            vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): str,
+            vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, "")): vol.All(
+                str, vol.Length(min=1)
+            ),
             vol.Required(
                 CONF_GOOGLE_ENTITY_ID,
                 default=defaults.get(CONF_GOOGLE_ENTITY_ID),
@@ -118,12 +120,20 @@ class GoogleTasksIcloudRemindersSyncConfigFlow(config_entries.ConfigFlow, domain
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = _validate_input(user_input)
+            pair_id = slugify(user_input[CONF_NAME])
+            if not pair_id:
+                errors["base"] = "invalid_name"
+            elif any(
+                entry.data.get(CONF_PAIR_ID) == pair_id
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+            ):
+                errors["base"] = "duplicate_pair_id"
             if not errors:
                 unique_id = f"{user_input[CONF_GOOGLE_ENTITY_ID]}::{user_input[CONF_ICLOUD_ENTITY_ID]}"
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
                 data = dict(user_input)
-                data[CONF_PAIR_ID] = slugify(user_input[CONF_NAME])
+                data[CONF_PAIR_ID] = pair_id
                 return self.async_create_entry(title=user_input[CONF_NAME], data=data)
 
         return self.async_show_form(
@@ -150,10 +160,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             errors = _validate_input(user_input)
+            pair_id = self.config_entry.data[CONF_PAIR_ID]
+            if any(
+                entry.entry_id != self.config_entry.entry_id
+                and entry.data.get(CONF_PAIR_ID) == pair_id
+                for entry in self.hass.config_entries.async_entries(DOMAIN)
+            ):
+                errors["base"] = "duplicate_pair_id"
             if not errors:
                 data = dict(self.config_entry.data)
                 data.update(user_input)
-                data[CONF_PAIR_ID] = self.config_entry.data[CONF_PAIR_ID]
+                data[CONF_PAIR_ID] = pair_id
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     title=user_input[CONF_NAME],
