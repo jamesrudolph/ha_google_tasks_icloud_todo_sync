@@ -1,6 +1,6 @@
 # sync-google-tasks-icloud-reminders
 
-Home Assistant custom integration for bidirectionally syncing a Google Tasks `todo` entity with an Apple iCloud Reminders `todo` entity.
+Home Assistant custom integration for bidirectionally syncing a [Google Tasks](https://www.home-assistant.io/integrations/google_tasks) `todo` entity with an [Apple iCloud](https://www.home-assistant.io/integrations/icloud#to-do-list) Reminders `todo` entity.
 
 ## Current scope
 
