@@ -1,0 +1,48 @@
+{
+  "title": "Google Tasks ↔ iCloud Reminders Sync",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add sync pair",
+        "description": "Configure one Google Tasks list and one iCloud Reminders list to sync.",
+        "data": {
+          "name": "Pair name",
+          "google_entity_id": "Google Tasks entity",
+          "icloud_entity_id": "iCloud Reminders entity",
+          "sync_direction": "Sync direction",
+          "sync_completion": "Sync completion status",
+          "sync_due_dates": "Sync due dates",
+          "sync_descriptions": "Sync descriptions",
+          "cleanup_enabled": "Enable cleanup of old completed tasks",
+          "cleanup_days": "Cleanup age in days",
+          "debounce_seconds": "Debounce seconds"
+        }
+      }
+    },
+    "error": {
+      "same_entity": "Choose two different to-do entities."
+    },
+    "abort": {
+      "already_configured": "This pair is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit sync pair",
+        "data": {
+          "name": "Pair name",
+          "google_entity_id": "Google Tasks entity",
+          "icloud_entity_id": "iCloud Reminders entity",
+          "sync_direction": "Sync direction",
+          "sync_completion": "Sync completion status",
+          "sync_due_dates": "Sync due dates",
+          "sync_descriptions": "Sync descriptions",
+          "cleanup_enabled": "Enable cleanup of old completed tasks",
+          "cleanup_days": "Cleanup age in days",
+          "debounce_seconds": "Debounce seconds"
+        }
+      }
+    }
+  }
+}

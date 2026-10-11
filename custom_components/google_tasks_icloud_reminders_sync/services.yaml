@@ -1,0 +1,35 @@
+sync_now:
+  name: Sync now
+  description: Trigger an immediate sync for all configured pairs or one specific pair.
+  fields:
+    pair_id:
+      name: Pair ID
+      description: Optional entry pair_id to sync only one configured pair.
+      selector:
+        text:
+
+resync_pair:
+  name: Re-sync pair
+  description: Clear stored mappings and run a fresh sync.
+  fields:
+    pair_id:
+      required: true
+      name: Pair ID
+      description: Pair ID or config entry ID to re-sync.
+      selector:
+        text:
+
+reset_pair:
+  name: Reset pair mapping
+  description: Clear the stored mapping for one configured pair without starting a sync.
+  fields:
+    pair_id:
+      required: true
+      name: Pair ID
+      description: Pair ID or config entry ID to reset.
+      selector:
+        text:
+
+reload:
+  name: Reload sync pairs
+  description: Reload all configured sync pairs.

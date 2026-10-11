@@ -1,0 +1,12 @@
+{
+  "domain": "google_tasks_icloud_reminders_sync",
+  "name": "Google Tasks ↔ iCloud Reminders Sync",
+  "codeowners": ["@jamesrudolph"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders",
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "requirements": [],
+  "version": "0.1.0"
+}
