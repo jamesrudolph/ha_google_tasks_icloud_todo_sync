@@ -201,13 +201,14 @@ The tool links exactly one Google Tasks list, one iCloud Reminders list and one 
 - Keep `google_tasks_icloud_reminders_sync`: ties the name to two providers and excludes the HA side, so less good.
 Domain names are permanent once users install, so choose before coding. HA domains must be lowercase snake_case and unique (check it does not clash with an existing core integration).
 
-### 7.6 Remaining questions
-1. Pick a name (7.5).
-2. Order sync (7.2): OK that iCloud (and any endpoint without move support) keeps its own order, and that order-only edits are detected only on the 5-minute poll?
-3. ~~Duplicate pairing (7.3)~~: confirmed, Nth-duplicate pairing.
-4. Diagnostics (7.4): is redacting item text by default fine?
-5. Do you want a Home Assistant **sensor/binary_sensor** per group (last sync time, status, pending conflicts) in v1, or only services/events and diagnostics?
-6. Do you want persistent notifications / repair issues when the mass-delete guard trips or an endpoint is unavailable for a long time?
+### 7.6 Round-3 decisions (final scoping)
+- **Name:** "Home Assistant Google Tasks Apple iCloud Todo List Sync". Use it as the manifest `name`, config-flow title and README title. Proposed domain (permanent once installed; agent must confirm it is unused in core and HACS): `ha_google_tasks_icloud_todo_sync`. Replace the `todo_three_way_sync` / `three_way_todo_sync` placeholders everywhere above with this domain.
+- **Order sync:** accepted as described in 7.2: iCloud (and any endpoint lacking move support) keeps its own order; order-only edits are only detected on the 5-minute poll.
+- **Duplicate titles:** Nth-duplicate pairing (7.3).
+- **Diagnostics:** item text (summaries/descriptions) redacted by default.
+- **Sensors:** each group exposes sensors in v1 (last sync time, status, pending conflicts/writes count).
+- **Repair issues / notifications:** raised when the mass-delete guard trips or an endpoint is unavailable for a long time (e.g. > 1 hour; configurable); auto-cleared when resolved.
+- No open scoping questions remain. Any new ambiguity found while reading the official integrations should be recorded in the PR description and raised, not guessed.
 
 ## 8. Definition of done (v1)
 - Edits to title, status, due date and description in any of the three lists converge on all three within one poll cycle, without duplicates, flapping or loops.
