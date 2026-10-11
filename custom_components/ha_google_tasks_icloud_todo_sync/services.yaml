@@ -1,0 +1,20 @@
+sync_now:
+  name: Sync now
+  description: Run an immediate sync for one group or for all configured groups.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: Optional sync group config entry ID. If omitted, all groups are synced.
+      selector:
+        text:
+
+rebuild_mapping:
+  name: Rebuild mapping
+  description: Reset stored mappings and rebuild them without propagating deletes.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: Optional sync group config entry ID. If omitted, all groups rebuild their mappings.
+      selector:
+        text:
+

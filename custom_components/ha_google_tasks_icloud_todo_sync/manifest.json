@@ -1,0 +1,14 @@
+{
+  "domain": "ha_google_tasks_icloud_todo_sync",
+  "name": "Home Assistant Google Tasks Apple iCloud Todo List Sync",
+  "codeowners": ["@jamesrudolph"],
+  "config_flow": true,
+  "documentation": "https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders/issues",
+  "loggers": ["custom_components.ha_google_tasks_icloud_todo_sync"],
+  "requirements": [],
+  "version": "1.0.0"
+}
+
