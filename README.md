@@ -68,7 +68,7 @@ Releases are tag-driven; see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
 ## License
 
-TBD (add a `LICENSE` file before the first release).
+[MIT](LICENSE)
 
 [release-badge]: https://img.shields.io/github/v/release/jamesrudolph/sync-google-tasks-icloud-reminders
 [release]: https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders/releases
