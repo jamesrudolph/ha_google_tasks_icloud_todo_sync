@@ -1,0 +1,7 @@
+{
+  "name": "Home Assistant Google Tasks Apple iCloud Todo List Sync",
+  "homeassistant": "2026.10.0",
+  "zip_release": true,
+  "filename": "ha_google_tasks_icloud_todo_sync.zip",
+  "render_readme": true
+}

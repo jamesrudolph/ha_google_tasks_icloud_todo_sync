@@ -1,0 +1,70 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      has_integration: ${{ steps.detect.outputs.has_integration }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: detect
+        run: |
+          if ls custom_components/*/manifest.json >/dev/null 2>&1; then
+            echo "has_integration=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_integration=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  hassfest:
+    needs: check
+    if: needs.check.outputs.has_integration == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    needs: check
+    if: needs.check.outputs.has_integration == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  ruff:
+    needs: check
+    if: needs.check.outputs.has_integration == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check .
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check .
+
+  tests:
+    needs: check
+    if: needs.check.outputs.has_integration == 'true' && hashFiles('tests/**') != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install -r requirements_test.txt
+      - run: pytest tests
