@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version and build zip
+        env:
+          DOMAIN: ha_google_tasks_icloud_todo_sync
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          MANIFEST="custom_components/${DOMAIN}/manifest.json"
+          test -f "$MANIFEST" || { echo "Missing $MANIFEST"; exit 1; }
+          python3 - "$MANIFEST" "$VERSION" <<'PY'
+          import json, sys
+          path, version = sys.argv[1:3]
+          with open(path) as f:
+              data = json.load(f)
+          data["version"] = version
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+              f.write("\n")
+          PY
+          cd "custom_components/${DOMAIN}"
+          zip -r "${GITHUB_WORKSPACE}/${DOMAIN}.zip" . -x "*__pycache__*"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ha_google_tasks_icloud_todo_sync.zip
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
