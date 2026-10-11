@@ -11,7 +11,7 @@ Status: **draft for discussion**. Restart from `main`; PR #1 (`copilot/google-ta
 - Target: latest Home Assistant OS / Core. Use current APIs (`ConfigEntry.runtime_data`, `OptionsFlowWithReload`, typed config entries, `TodoListEntityFeature` enum, `async_forward_entry_setups`).
 
 ### Non-goals (v1)
-Provider-only fields, subtasks, ordering/move, multiple lists per config entry, more than three endpoints, deletion of whole lists, UI panel.
+Provider-only fields, subtasks, ordering/move, more than three lists per group (multiple groups = multiple config entries), more than three endpoints, deletion of whole lists, UI panel.
 
 ## 2. Reference code the agent MUST read first
 
@@ -90,7 +90,7 @@ For each field in {summary, status, due, description}, with current values `h`, 
 - All equal: nothing.
 - Only one side differs from `b`: that value wins and is written to the other two.
 - Several sides changed to the same value: converge, no write on those.
-- Real conflict (different new values): deterministic rule (see questions). HA todo items have no per-item modified time, so use a fixed tiebreak (proposal: Home Assistant > iCloud > Google); for `status`, "completed" wins.
+- Real conflict (different new values): deterministic rule (see questions). HA todo items have no per-item modified time, so use a fixed tiebreak (default: Home Assistant > iCloud > Google, user-configurable); for `status`, "completed" wins.
 - Whole-item rules:
   - New unmapped item on one side: create on the other two (completed ones? see questions).
   - Item gone from one side, unchanged vs `base` elsewhere: delete on the others (tombstone).
@@ -114,7 +114,7 @@ For each field in {summary, status, due, description}, with current values `h`, 
 ### 3.7 Config flow (UI only)
 - Step 1: name + three `EntitySelector(domain="todo")` fields ("Home Assistant list", "Google Tasks list", "iCloud Reminders list"). Validate distinct, existing, and supporting create/update/delete.
 - Do **not** require specific platforms (no CalDAV assumption); optionally warn if the platform is not `google_tasks`/`icloud`/`local_todo`.
-- Options: poll interval, debounce, tombstone retention, mass-delete threshold, maybe "sync completed items" and cleanup-after-N-days. **No direction option.**
+- Options: tiebreak order, poll interval, debounce, tombstone retention (default 30 days), mass-delete threshold. **No direction option** and no completed-item cleanup.
 - Use `OptionsFlowWithReload` and `ConfigEntry.runtime_data`.
 
 ## 4. Implementation phases (for the AI agent)
@@ -144,21 +144,37 @@ Create/complete/reopen/edit title/edit due/edit description/delete in each of H,
 - **Cloud errors**: iCloud 2FA re-auth makes the entity unavailable; the abort-on-unavailable rule covers this.
 - **HA-side list**: Local To-do stores in an `.ics` file; check UID stability and `todo.update_item` addressing (uid or summary).
 
-## 7. Questions to narrow scope
+## 7. Decisions (from user answers) and remaining questions
 
-1. **HA-side list:** use an existing HA list (Local To-do, Shopping List, ...) or should the integration create/own one? (Existing is simplest.)
-2. **Conflicts:** is the tiebreak (HA > iCloud > Google, completed wins) acceptable?
-3. **Deletes:** propagate (with mass-delete guard) or "never delete" for v1? Deletion is the riskiest feature.
-4. **Completed items:** mirror them (including ones that exist on one side at first sync), or only status changes on linked items? Auto-clean old completed items?
-5. **Due times:** treat `due` as **date-only** everywhere (simplest, no flapping), or keep times between HA and iCloud?
-6. **Descriptions:** in v1 or deferred?
-7. **One group or many:** exactly one group of three lists for v1?
-8. **Bootstrap:** on pre-populated lists, link by matching titles, or copy everything after a dry run?
-9. **Latency:** is a 5-minute poll plus state-change triggers fine?
-10. **Naming:** domain/name preference (placeholder `todo_three_way_sync`; or keep `google_tasks_icloud_reminders_sync`)?
-11. **Testing/CI:** OK to add pytest, ruff, hassfest, HACS validation workflows?
-12. **HA version floor:** "latest only", or a minimum version for HACS metadata?
-13. **Storage:** is `.storage` JSON (HA `Store`) what you meant? Your original message was cut off at "store…": what should be stored besides ID mappings and last-synced base values?
+### Decisions
+1. **Entities pre-exist.** All three `todo` entities already exist; the config flow only selects them. The integration never creates lists.
+2. **Tiebreak order is user-configurable.** Default Home Assistant > iCloud > Google; "completed wins" stays fixed for `status`. See 7.1 for the drag/drop question.
+3. **Deletions sync in v1** with a **30-day tombstone retention** (configurable) in the JSON Store, plus the mass-delete guard (3.6).
+4. **Lists are fully in sync.** A fresh/forced rebuild resolves field conflicts with the tiebreak order. **Old completed items are retained** and never auto-cleaned; items are removed only when a user explicitly deletes them in one of the lists. (Drop the "cleanup completed after N days" option.) Completed items are mirrored like any other item.
+5. **`due` is a date everywhere** (v1). Store it internally as an ISO date (or datetime if a backend supplies one, for fidelity), but compare by date and push a plain date to Google (and to the others). This removes the flapping risk in section 6.
+6. **Descriptions are in v1.**
+7. **Multiple sync groups:** each config entry is one group of three lists; the user may add the integration multiple times (one entry per group). Storage is keyed by `entry_id` (already designed in 3.2). An entity may belong to only one group; the config flow rejects overlaps.
+8. **Bootstrap / forced rebuild:** match items by normalized title; resolve description/due via the tiebreak order. **Duplicate titles within a list are separate items**: match them one-to-one (pair the Nth duplicate on each side in a stable order, e.g. by due date then list order), never collapse them, and create counterparts for any surplus.
+9. **Poll every 5 minutes** plus state-change triggers.
+
+### 7.1 Drag/drop tiebreak ordering: difficulty
+- **Not hard for the data model**: store `tiebreak_order: ["ha","icloud","google"]` in the options and have the engine read it. The engine change is trivial.
+- **UI is the only cost.** Config/options flows are rendered by the HA frontend and cannot host custom widgets. Options, easiest first:
+  1. Three dropdowns ("1st priority", "2nd", "3rd") with validation that each is used once. Works everywhere; recommended for v1.
+  2. A `SelectSelector` with `multiple: true` over the three endpoints; check in current HA source/docs whether the frontend selector supports reordering selected values (verify this before relying on it).
+  3. A true drag/drop experience needs a custom panel/Lovelace card (frontend JS plus websocket API). Defer past v1.
+
+### 7.2 Remaining questions
+1. **Tiebreak UI:** is option 1 (three priority dropdowns) acceptable for v1, deferring real drag/drop?
+2. **Reordering of items:** list order is not synced (Google supports `move`, iCloud does not). Confirm ordering is out of scope.
+3. **Deletion tombstone details:** if an item is deleted in one list but edited in another in the same cycle, the plan says **edit wins** and it is recreated. Do you prefer delete wins?
+4. **Rebuild semantics:** should a forced rebuild ever delete items (e.g. items absent from the tiebreak winner), or only link/create/update? The plan assumes **never delete** on rebuild.
+5. **Duplicate-title pairing:** is the Nth-duplicate pairing rule acceptable, knowing duplicates may be mis-paired, but since fields are then synced the result still converges?
+6. **Naming:** domain/name (placeholder `todo_three_way_sync`; or keep `google_tasks_icloud_reminders_sync`)?
+7. **Testing/CI:** OK to add pytest, ruff, hassfest, HACS validation workflows?
+8. **HA version floor:** "latest only", or a minimum version in `hacs.json`?
+9. **Storage:** your original message cut off at "store…": anything to store beyond canonical IDs, per-endpoint IDs, base values, tombstones and settings?
+10. **Multiple groups:** should the config flow show a friendly group name only, or also expose per-group options (poll interval, tombstone days, mass-delete threshold)?
 
 ## 8. Definition of done (v1)
 - Edits to title, status, due date and description in any of the three lists converge on all three within one poll cycle, without duplicates, flapping or loops.
