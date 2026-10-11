@@ -5,10 +5,18 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.components.todo.const import DATA_COMPONENT, TodoListEntityFeature
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlowWithReload
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers import selector
+
+try:
+    from homeassistant.config_entries import OptionsFlowWithReload
+except ImportError:  # pragma: no cover - compatibility for older HA in local tests
+    from homeassistant.config_entries import OptionsFlow
+
+    class OptionsFlowWithReload(OptionsFlow):
+        """Fallback for older Home Assistant test environments."""
+
 
 from .const import (
     CONF_DEBOUNCE_SECONDS,
@@ -32,8 +40,8 @@ from .const import (
     DEFAULT_TOMBSTONE_DAYS,
     DEFAULT_UNAVAILABLE_GRACE_MINUTES,
     DOMAIN,
-    ENDPOINT_HOME_ASSISTANT,
     ENDPOINT_GOOGLE,
+    ENDPOINT_HOME_ASSISTANT,
     ENDPOINT_ICLOUD,
 )
 
@@ -62,21 +70,15 @@ def _base_schema(user_input: dict[str, Any] | None = None) -> vol.Schema:
             vol.Required(
                 CONF_HOME_ASSISTANT_ENTITY_ID,
                 default=user_input.get(CONF_HOME_ASSISTANT_ENTITY_ID),
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="todo")
-            ),
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="todo")),
             vol.Required(
                 CONF_GOOGLE_ENTITY_ID,
                 default=user_input.get(CONF_GOOGLE_ENTITY_ID),
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="todo")
-            ),
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="todo")),
             vol.Required(
                 CONF_ICLOUD_ENTITY_ID,
                 default=user_input.get(CONF_ICLOUD_ENTITY_ID),
-            ): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="todo")
-            ),
+            ): selector.EntitySelector(selector.EntitySelectorConfig(domain="todo")),
         }
     )
 
@@ -107,37 +109,61 @@ def _options_schema(options: dict[str, Any]) -> vol.Schema:
                 CONF_POLL_INTERVAL,
                 default=options[CONF_POLL_INTERVAL],
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=60, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=60,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
             ),
             vol.Required(
                 CONF_DEBOUNCE_SECONDS,
                 default=options[CONF_DEBOUNCE_SECONDS],
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=0, max=300, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=300,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
             ),
             vol.Required(
                 CONF_TOMBSTONE_DAYS,
                 default=options[CONF_TOMBSTONE_DAYS],
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=365, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=365,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
             ),
             vol.Required(
                 CONF_MASS_DELETE_COUNT,
                 default=options[CONF_MASS_DELETE_COUNT],
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=1000, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=1000,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
             ),
             vol.Required(
                 CONF_MASS_DELETE_PERCENT,
                 default=options[CONF_MASS_DELETE_PERCENT],
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=100, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=100,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
             ),
             vol.Required(
                 CONF_UNAVAILABLE_GRACE_MINUTES,
                 default=options[CONF_UNAVAILABLE_GRACE_MINUTES],
             ): selector.NumberSelector(
-                selector.NumberSelectorConfig(min=1, max=1440, mode=selector.NumberSelectorMode.BOX)
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=1440,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
             ),
             vol.Required(
                 CONF_ORDER_SYNC,
@@ -194,8 +220,11 @@ class SyncConfigFlow(ConfigFlow, domain=DOMAIN):
                     data=user_input,
                     options=_default_options(),
                 )
-
-        return self.async_show_form(step_id="user", data_schema=_base_schema(user_input), errors=errors)
+        return self.async_show_form(
+            step_id="user",
+            data_schema=_base_schema(user_input),
+            errors=errors,
+        )
 
     def _entity_overlap(self, entities: list[str]) -> bool:
         for existing in self._async_current_entries():
@@ -234,4 +263,3 @@ class SyncOptionsFlow(OptionsFlowWithReload):
             data_schema=_options_schema(options),
             errors=errors,
         )
-

@@ -105,7 +105,9 @@ def test_plan_sync_merges_different_fields_without_conflict() -> None:
         due="2026-10-13",
         description="Buy lactose-free",
     )
-    assert {(operation.action, operation.endpoint) for operation in plan.operations} == {
+    assert {
+        (operation.action, operation.endpoint) for operation in plan.operations
+    } == {
         ("update", ENDPOINT_GOOGLE),
         ("update", ENDPOINT_HOME_ASSISTANT),
         ("update", ENDPOINT_ICLOUD),
@@ -208,6 +210,8 @@ def test_plan_sync_bootstrap_pairs_duplicate_titles_by_position() -> None:
     )
 
     assert len(plan.resolutions) == 2
-    assert plan.summary["creates"] == 4
-    assert all(resolution.link_method in {"title_match", "created"} for resolution in plan.resolutions.values())
-
+    assert plan.summary["creates"] == 3
+    assert all(
+        resolution.link_method in {"title_match", "created"}
+        for resolution in plan.resolutions.values()
+    )

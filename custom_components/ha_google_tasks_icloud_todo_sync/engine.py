@@ -40,7 +40,9 @@ def _resolve_field(
     tiebreak_order: list[str],
 ) -> _FieldResult:
     """Resolve one field with three-way merge semantics."""
-    current_values = {ep: getattr(record, field) for ep, record in current_records.items()}
+    current_values = {
+        endpoint: getattr(record, field) for endpoint, record in current_records.items()
+    }
     changed = {
         endpoint: value
         for endpoint, value in current_values.items()
@@ -49,7 +51,9 @@ def _resolve_field(
     if not changed:
         return _FieldResult(base_value, None, [], False)
 
-    if field == "status" and any(value == STATUS_COMPLETED for value in changed.values()):
+    if field == "status" and any(
+        value == STATUS_COMPLETED for value in changed.values()
+    ):
         winner = next(
             endpoint
             for endpoint in tiebreak_order
@@ -105,7 +109,12 @@ def _resolve_record(
     last_changed_by: str | None = None
     resolved: dict[str, Any] = {}
     for field in ("summary", "status", "due", "description"):
-        result = _resolve_field(field, base_values[field], current_records, tiebreak_order)
+        result = _resolve_field(
+            field,
+            base_values[field],
+            current_records,
+            tiebreak_order,
+        )
         resolved[field] = result.value
         if result.winner and last_changed_by is None:
             last_changed_by = result.winner
@@ -133,7 +142,10 @@ def _resolve_record(
 
 def _stable_items(items: list[EndpointSnapshotItem]) -> list[EndpointSnapshotItem]:
     """Return items in stable bootstrap pairing order."""
-    return sorted(items, key=lambda item: (item.record.due or "", item.position, item.uid))
+    return sorted(
+        items,
+        key=lambda item: (item.record.due or "", item.position, item.uid),
+    )
 
 
 def _desired_order(
@@ -392,7 +404,8 @@ def plan_sync(
     bootstrap = rebuild or not group_state.get("bootstrap_completed", False)
     current_counts = {endpoint: len(snapshots[endpoint]) for endpoint in ENDPOINTS}
     current_by_uid = {
-        endpoint: {item.uid: item for item in snapshots[endpoint]} for endpoint in ENDPOINTS
+        endpoint: {item.uid: item for item in snapshots[endpoint]}
+        for endpoint in ENDPOINTS
     }
     used_uids = {endpoint: set() for endpoint in ENDPOINTS}
     cycle_id = int(group_state.get("cycle_counter", 0)) + 1
@@ -401,7 +414,9 @@ def plan_sync(
     operations: list[SyncOperation] = []
     for canonical_id, stored_item in group_state.get("items", {}).items():
         current_items = {
-            endpoint: current_by_uid[endpoint].get(stored_item.get("ids", {}).get(endpoint))
+            endpoint: current_by_uid[endpoint].get(
+                stored_item.get("ids", {}).get(endpoint)
+            )
             for endpoint in ENDPOINTS
         }
         for endpoint, item in current_items.items():
@@ -421,9 +436,7 @@ def plan_sync(
 
     unmatched = {
         endpoint: [
-            item
-            for item in snapshots[endpoint]
-            if item.uid not in used_uids[endpoint]
+            item for item in snapshots[endpoint] if item.uid not in used_uids[endpoint]
         ]
         for endpoint in ENDPOINTS
     }
@@ -445,7 +458,9 @@ def plan_sync(
         for endpoint in ENDPOINTS:
             delete_count = delete_counts[endpoint]
             current_count = current_counts[endpoint]
-            delete_percent = (delete_count / current_count * 100) if current_count else 0
+            delete_percent = (
+                (delete_count / current_count * 100) if current_count else 0
+            )
             if delete_count > mass_delete_count or (
                 delete_count > 1 and delete_percent > mass_delete_percent
             ):

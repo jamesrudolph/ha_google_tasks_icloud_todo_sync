@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
-from collections.abc import Callable
-from datetime import datetime, timedelta
 import logging
+from collections.abc import Callable
+from copy import deepcopy
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -39,8 +39,8 @@ from .const import (
     DEFAULT_TIEBREAK_ORDER,
     DEFAULT_TOMBSTONE_DAYS,
     DEFAULT_UNAVAILABLE_GRACE_MINUTES,
-    ENDPOINT_HOME_ASSISTANT,
     ENDPOINT_GOOGLE,
+    ENDPOINT_HOME_ASSISTANT,
     ENDPOINT_ICLOUD,
     ENDPOINTS,
     INTEGRATION_VERSION,
@@ -333,10 +333,7 @@ class SyncManager:
 
             plan = plan_sync(
                 working_group,
-                {
-                    endpoint: snapshot_data[endpoint].items
-                    for endpoint in ENDPOINTS
-                },
+                {endpoint: snapshot_data[endpoint].items for endpoint in ENDPOINTS},
                 tiebreak_order=entry_options(self.entry)[CONF_TIEBREAK_ORDER],
                 mass_delete_count=entry_options(self.entry)[CONF_MASS_DELETE_COUNT],
                 mass_delete_percent=entry_options(self.entry)[CONF_MASS_DELETE_PERCENT],
@@ -374,7 +371,10 @@ class SyncManager:
                 entity_id = self.entity_ids[operation.endpoint]
                 if operation.action == "create":
                     assert operation.record is not None
-                    created_uid = await self.adapter.async_create(entity_id, operation.record)
+                    created_uid = await self.adapter.async_create(
+                        entity_id,
+                        operation.record,
+                    )
                     plan.resolutions[operation.canonical_id].ids[operation.endpoint] = (
                         created_uid
                     )
@@ -382,7 +382,11 @@ class SyncManager:
                 if operation.action == "update":
                     assert operation.uid is not None
                     assert operation.record is not None
-                    await self.adapter.async_update(entity_id, operation.uid, operation.record)
+                    await self.adapter.async_update(
+                        entity_id,
+                        operation.uid,
+                        operation.record,
+                    )
                     continue
                 if operation.action == "delete":
                     assert operation.uid is not None
@@ -405,7 +409,11 @@ class SyncManager:
 
             final_snapshot_data, final_unavailable = await self._async_fetch_snapshots()
             if final_unavailable:
-                await self._async_handle_unavailable(current_group, final_unavailable, utcnow())
+                await self._async_handle_unavailable(
+                    current_group,
+                    final_unavailable,
+                    utcnow(),
+                )
                 return
 
             self._apply_final_state(
@@ -426,7 +434,7 @@ class SyncManager:
             await self.store.async_save()
             self._last_sync_at = datetime.fromisoformat(working_group["last_sync_at"])
             self._set_status(SYNC_STATUS_OK, pending_count=0)
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             _LOGGER.exception("Sync cycle failed for %s", self.entry.entry_id)
             current_group["settings"] = settings_snapshot(self.entry)
             self.store.record_cycle(
@@ -503,8 +511,10 @@ class SyncManager:
                     "base_hash": resolution.resolved.hash(),
                     "last_seen": last_seen,
                     "last_seen_hashes": last_seen_hashes,
-                    "first_seen_on": resolution.first_seen_on or previous.get("first_seen_on"),
-                    "link_method": resolution.link_method or previous.get("link_method", "uid"),
+                    "first_seen_on": resolution.first_seen_on
+                    or previous.get("first_seen_on"),
+                    "link_method": resolution.link_method
+                    or previous.get("link_method", "uid"),
                     "last_changed_by": resolution.last_changed_by,
                     "last_changed_at": as_iso(now)
                     if resolution.last_changed_by
@@ -557,7 +567,9 @@ class SyncManager:
             "status": self._status,
             "pending_count": self._pending_count,
             "last_error": self._last_error,
-            "last_sync_at": self._last_sync_at.isoformat() if self._last_sync_at else None,
+            "last_sync_at": self._last_sync_at.isoformat()
+            if self._last_sync_at
+            else None,
             "unavailable_since": self._unavailable_since.isoformat()
             if self._unavailable_since
             else None,

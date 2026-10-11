@@ -7,7 +7,13 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.core import callback
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+
+try:
+    from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+except ImportError:  # pragma: no cover - compatibility for older HA in local tests
+    from collections.abc import Callable
+
+    AddConfigEntryEntitiesCallback = Callable
 
 from . import SyncConfigEntry
 from .const import DOMAIN
@@ -37,10 +43,7 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up sensor entities for one sync group."""
-    async_add_entities(
-        SyncSensor(entry, description)
-        for description in SENSORS
-    )
+    async_add_entities(SyncSensor(entry, description) for description in SENSORS)
 
 
 class SyncSensor(SensorEntity):
@@ -48,7 +51,11 @@ class SyncSensor(SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, entry: SyncConfigEntry, description: SyncSensorDescription) -> None:
+    def __init__(
+        self,
+        entry: SyncConfigEntry,
+        description: SyncSensorDescription,
+    ) -> None:
         self._entry = entry
         self._description = description
         self._manager = entry.runtime_data.manager
@@ -79,4 +86,3 @@ class SyncSensor(SensorEntity):
     @callback
     def _handle_update(self) -> None:
         self.async_write_ha_state()
-

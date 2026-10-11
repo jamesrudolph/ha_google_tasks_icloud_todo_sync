@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-from homeassistant.components.todo.entity import TodoItem
 from homeassistant.components.todo.const import TodoItemStatus
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_google_tasks_icloud_todo_sync import DomainData
 from custom_components.ha_google_tasks_icloud_todo_sync.const import (
@@ -20,8 +18,12 @@ from custom_components.ha_google_tasks_icloud_todo_sync.const import (
     CONF_POLL_INTERVAL,
     DOMAIN,
     SERVICE_SYNC_NOW,
-    STORAGE_KEY,
 )
+
+try:
+    from homeassistant.components.todo.entity import TodoItem
+except ModuleNotFoundError:  # pragma: no cover
+    from homeassistant.components.todo import TodoItem
 
 
 async def _setup_entry(hass, todo_lists) -> MockConfigEntry:
@@ -172,4 +174,3 @@ async def test_order_sync_moves_supported_endpoints_only(hass, todo_lists) -> No
 
     assert [item.summary for item in todo_lists["google"].todo_items] == ["B", "A"]
     assert [item.summary for item in todo_lists["icloud"].todo_items] == ["A", "B"]
-

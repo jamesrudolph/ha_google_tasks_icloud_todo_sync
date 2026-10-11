@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
 from homeassistant import config_entries
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_google_tasks_icloud_todo_sync.const import (
     CONF_GOOGLE_ENTITY_ID,
@@ -48,4 +47,3 @@ async def test_config_flow_rejects_overlap_and_creates_entry(hass, todo_lists) -
     )
     assert result["type"] == "form"
     assert result["errors"]["base"] == "entity_already_configured"
-

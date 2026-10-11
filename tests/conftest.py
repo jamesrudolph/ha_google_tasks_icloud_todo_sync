@@ -2,20 +2,63 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+import inspect
+import sys
+from dataclasses import fields, replace
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
-
-from homeassistant.components.todo.entity import TodoItem, TodoListEntity
-from homeassistant.components.todo.const import TodoItemStatus, TodoListEntityFeature
+from homeassistant.components.todo.const import (
+    DATA_COMPONENT,
+    TodoItemStatus,
+    TodoListEntityFeature,
+)
 from homeassistant.setup import async_setup_component
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-@pytest.fixture
-def auto_enable_custom_integrations():
+try:
+    from homeassistant.components.todo.entity import TodoItem, TodoListEntity
+except ModuleNotFoundError:  # pragma: no cover
+    from homeassistant.components.todo import TodoItem, TodoListEntity
+
+_TODOITEM_FIELDS = {field.name for field in fields(TodoItem)}
+
+
+def _make_todo_item(
+    *,
+    uid: str | None,
+    summary: str | None,
+    status,
+    due,
+    description: str | None,
+    completed=None,
+) -> TodoItem:
+    kwargs = {
+        "uid": uid,
+        "summary": summary,
+        "status": status,
+        "due": due,
+        "description": description,
+    }
+    if "completed" in _TODOITEM_FIELDS:
+        kwargs["completed"] = completed
+    return TodoItem(**kwargs)
+
+
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable loading the custom integration under test."""
-    return True
+    yield
+
+
+@pytest.fixture(autouse=True)
+async def unload_config_entries(hass):
+    """Unload config entries after each test to avoid lingering timers."""
+    yield
+    for entry in list(hass.config_entries.async_entries()):
+        await hass.config_entries.async_remove(entry.entry_id)
 
 
 class FakeTodoListEntity(TodoListEntity):
@@ -36,6 +79,7 @@ class FakeTodoListEntity(TodoListEntity):
         self._attr_name = name
         self._attr_unique_id = unique_id
         self._attr_supported_features = features
+        self.entity_id = f"todo.{unique_id}"
         self._available = True
         self._counter = 0
         self._date_only = date_only
@@ -43,7 +87,9 @@ class FakeTodoListEntity(TodoListEntity):
         for item in items or []:
             self._counter += 1
             uid = item.uid or f"{unique_id}-{self._counter}"
-            self._items.append(replace(item, uid=uid, due=self._normalize_due(item.due)))
+            self._items.append(
+                replace(item, uid=uid, due=self._normalize_due(item.due))
+            )
         self._sync_attr()
 
     @property
@@ -61,13 +107,13 @@ class FakeTodoListEntity(TodoListEntity):
     async def async_create_todo_item(self, item: TodoItem) -> None:
         self._counter += 1
         self._items.append(
-            TodoItem(
-                uid=f"{self.unique_id}-{self._counter}",
+            _make_todo_item(
+                uid=f"{self._attr_unique_id}-{self._counter}",
                 summary=item.summary,
                 status=item.status,
                 due=self._normalize_due(item.due),
                 description=item.description,
-                completed=item.completed,
+                completed=getattr(item, "completed", None),
             )
         )
         self._sync_attr()
@@ -82,7 +128,7 @@ class FakeTodoListEntity(TodoListEntity):
                 if item.status == TodoItemStatus.COMPLETED
                 else None
             )
-            self._items[index] = TodoItem(
+            self._items[index] = _make_todo_item(
                 uid=existing.uid,
                 summary=item.summary,
                 status=item.status,
@@ -102,13 +148,17 @@ class FakeTodoListEntity(TodoListEntity):
     async def async_move_todo_item(
         self, uid: str, previous_uid: str | None = None
     ) -> None:
-        src_index = next(index for index, item in enumerate(self._items) if item.uid == uid)
+        src_index = next(
+            index for index, item in enumerate(self._items) if item.uid == uid
+        )
         item = self._items.pop(src_index)
         if previous_uid is None:
             self._items.insert(0, item)
         else:
             dst_index = next(
-                index for index, existing in enumerate(self._items) if existing.uid == previous_uid
+                index
+                for index, existing in enumerate(self._items)
+                if existing.uid == previous_uid
             )
             self._items.insert(dst_index + 1, item)
         self._sync_attr()
@@ -127,13 +177,15 @@ class FakeTodoListEntity(TodoListEntity):
         for index, existing in enumerate(self._items):
             if existing.uid != uid:
                 continue
-            self._items[index] = TodoItem(
+            self._items[index] = _make_todo_item(
                 uid=existing.uid,
                 summary=summary if summary is not None else existing.summary,
                 status=status if status is not None else existing.status,
                 due=self._normalize_due(due if due is not None else existing.due),
-                description=description if description is not None else existing.description,
-                completed=existing.completed,
+                description=description
+                if description is not None
+                else existing.description,
+                completed=getattr(existing, "completed", None),
             )
             break
         self._sync_attr()
@@ -157,7 +209,7 @@ class FakeTodoListEntity(TodoListEntity):
 async def todo_lists(hass):
     """Create three fake todo entities."""
     await async_setup_component(hass, "todo", {})
-    component = hass.data["todo"]
+    component = hass.data[DATA_COMPONENT]
     features_full = (
         TodoListEntityFeature.CREATE_TODO_ITEM
         | TodoListEntityFeature.UPDATE_TODO_ITEM
@@ -200,7 +252,9 @@ async def todo_lists(hass):
         unique_id="icloud",
         features=features_icloud,
     )
-    component.async_add_entities([home, google, icloud])
+    add_result = component.async_add_entities([home, google, icloud])
+    if inspect.isawaitable(add_result):
+        await add_result
     await hass.async_block_till_done()
     return {
         "home": home,
@@ -212,4 +266,3 @@ async def todo_lists(hass):
             "icloud": icloud.entity_id,
         },
     }
-

@@ -22,7 +22,9 @@ def _redact(value: Any) -> Any:
     return value
 
 
-async def async_get_config_entry_diagnostics(hass, entry: SyncConfigEntry) -> dict[str, Any]:
+async def async_get_config_entry_diagnostics(
+    hass, entry: SyncConfigEntry
+) -> dict[str, Any]:
     """Return entry diagnostics."""
     domain_data: DomainData = hass.data[DOMAIN]
     group = deepcopy(
@@ -41,4 +43,3 @@ async def async_get_config_entry_diagnostics(hass, entry: SyncConfigEntry) -> di
         "manager": entry.runtime_data.manager.diagnostics_data(),
         "storage": _redact(group),
     }
-

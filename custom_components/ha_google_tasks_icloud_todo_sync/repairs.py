@@ -66,4 +66,3 @@ def async_create_unavailable_issue(
 def async_delete_unavailable_issue(hass: HomeAssistant, entry_id: str) -> None:
     """Remove the endpoint-unavailable issue."""
     ir.async_delete_issue(hass, DOMAIN, _issue_id(ISSUE_ID_UNAVAILABLE, entry_id))
-

@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime
-import logging
 
-from homeassistant.components.todo.const import DATA_COMPONENT
-from homeassistant.components.todo.entity import TodoItem, TodoListEntity
-from homeassistant.components.todo.const import TodoItemStatus, TodoListEntityFeature
+from homeassistant.components.todo.const import (
+    DATA_COMPONENT,
+    TodoItemStatus,
+    TodoListEntityFeature,
+)
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import STATUS_COMPLETED, STATUS_NEEDS_ACTION
 from .models import CanonicalTodoItem, EndpointSnapshotItem
+
+try:
+    from homeassistant.components.todo.entity import TodoItem, TodoListEntity
+except ModuleNotFoundError:  # pragma: no cover
+    from homeassistant.components.todo import TodoItem, TodoListEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -188,6 +195,8 @@ class TodoSyncAdapter:
             previous_uid = ordered_uids[index - 1] if index > 0 else None
             await entity.async_move_todo_item(uid, previous_uid)
             current.remove(uid)
-            insert_at = current.index(previous_uid) + 1 if previous_uid in current else 0
+            insert_at = (
+                current.index(previous_uid) + 1 if previous_uid in current else 0
+            )
             current.insert(insert_at, uid)
         await self.hass.async_block_till_done()

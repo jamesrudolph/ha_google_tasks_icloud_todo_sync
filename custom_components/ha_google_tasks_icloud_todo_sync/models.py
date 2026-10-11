@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import json
+from dataclasses import dataclass, field
 from typing import Any
 
 from .const import (
@@ -46,7 +46,7 @@ class CanonicalTodoItem:
         return hashlib.sha1(payload.encode(), usedforsecurity=False).hexdigest()
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "CanonicalTodoItem":
+    def from_dict(cls, data: dict[str, Any]) -> CanonicalTodoItem:
         """Create an item from persisted state."""
         return cls(
             summary=data["summary"],
@@ -138,4 +138,3 @@ def capped_conflicts(conflicts: list[ConflictEntry]) -> list[ConflictEntry]:
 def normalize_title_key(summary: str) -> str:
     """Return a stable key for bootstrap title matching."""
     return " ".join(summary.split()).casefold()
-
