@@ -11,7 +11,7 @@ Status: **draft for discussion**. Restart from `main`; PR #1 (`copilot/google-ta
 - Target: latest Home Assistant OS / Core. Use current APIs (`ConfigEntry.runtime_data`, `OptionsFlowWithReload`, typed config entries, `TodoListEntityFeature` enum, `async_forward_entry_setups`).
 
 ### Non-goals (v1)
-Provider-only fields, subtasks, ordering/move, more than three lists per group (multiple groups = multiple config entries), more than three endpoints, deletion of whole lists, UI panel.
+Provider-only fields, subtasks, more than three lists per group (multiple groups = multiple config entries), more than three endpoints, deletion of whole lists, UI panel.
 
 ## 2. Reference code the agent MUST read first
 
@@ -157,24 +157,57 @@ Create/complete/reopen/edit title/edit due/edit description/delete in each of H,
 8. **Bootstrap / forced rebuild:** match items by normalized title; resolve description/due via the tiebreak order. **Duplicate titles within a list are separate items**: match them one-to-one (pair the Nth duplicate on each side in a stable order, e.g. by due date then list order), never collapse them, and create counterparts for any surplus.
 9. **Poll every 5 minutes** plus state-change triggers.
 
-### 7.1 Drag/drop tiebreak ordering: difficulty
-- **Not hard for the data model**: store `tiebreak_order: ["ha","icloud","google"]` in the options and have the engine read it. The engine change is trivial.
-- **UI is the only cost.** Config/options flows are rendered by the HA frontend and cannot host custom widgets. Options, easiest first:
-  1. Three dropdowns ("1st priority", "2nd", "3rd") with validation that each is used once. Works everywhere; recommended for v1.
-  2. A `SelectSelector` with `multiple: true` over the three endpoints; check in current HA source/docs whether the frontend selector supports reordering selected values (verify this before relying on it).
-  3. A true drag/drop experience needs a custom panel/Lovelace card (frontend JS plus websocket API). Defer past v1.
+### 7.1 Round-2 decisions
+- **Tiebreak UI:** three priority dropdowns ("1st / 2nd / 3rd"), each endpoint used once. Drag/drop is deferred past v1.
+- **Item order is synced where possible** (see 7.2).
+- **Edit wins over delete** when both happen between two syncs (item is recreated on the side that deleted it).
+- **Forced rebuild never deletes**; it only links, creates and updates.
+- **Duplicate titles:** see 7.3 (pairing rule explained).
+- **CI/tests:** pytest, ruff, hassfest and HACS validation workflows are approved.
+- **Versions:** target the latest stable Home Assistant release as of October 2026 (expected 2026.10.x; the agent must confirm the exact current stable at https://www.home-assistant.io/blog/categories/release-notes/ and https://github.com/home-assistant/core/releases), the latest stable Python that release requires, and latest stable `pytest-homeassistant-custom-component`, `ruff` and GitHub Actions versions. Set the minimum HA version in `hacs.json` to that release. Do not support older versions.
+- **Per-group options:** yes (poll interval, tombstone days, mass-delete threshold, tiebreak order).
+- **Storage:** store as much as helps reconciliation and debugging (see 7.4).
 
-### 7.2 Remaining questions
-1. **Tiebreak UI:** is option 1 (three priority dropdowns) acceptable for v1, deferring real drag/drop?
-2. **Reordering of items:** list order is not synced (Google supports `move`, iCloud does not). Confirm ordering is out of scope.
-3. **Deletion tombstone details:** if an item is deleted in one list but edited in another in the same cycle, the plan says **edit wins** and it is recreated. Do you prefer delete wins?
-4. **Rebuild semantics:** should a forced rebuild ever delete items (e.g. items absent from the tiebreak winner), or only link/create/update? The plan assumes **never delete** on rebuild.
-5. **Duplicate-title pairing:** is the Nth-duplicate pairing rule acceptable, knowing duplicates may be mis-paired, but since fields are then synced the result still converges?
-6. **Naming:** domain/name (placeholder `todo_three_way_sync`; or keep `google_tasks_icloud_reminders_sync`)?
-7. **Testing/CI:** OK to add pytest, ruff, hassfest, HACS validation workflows?
-8. **HA version floor:** "latest only", or a minimum version in `hacs.json`?
-9. **Storage:** your original message cut off at "store…": anything to store beyond canonical IDs, per-endpoint IDs, base values, tombstones and settings?
-10. **Multiple groups:** should the config flow show a friendly group name only, or also expose per-group options (poll interval, tombstone days, mass-delete threshold)?
+### 7.2 Syncing item order
+- `todo.get_items` returns items in each list's own order, so the order can be read from all three.
+- Reordering is a separate capability, `TodoListEntityFeature.MOVE_TODO_ITEM`. From the official code, Google Tasks supports it (`async_move_todo_item`, calls the API `move` with `previous`); the iCloud `todo.py` feature list does **not** include it. Verify against current `dev` source, and check the HA-side entity too (Local To-do supports move in current core; confirm).
+- In core, move is exposed through the websocket command `todo/item/move`, not a normal service. The adapter must call it through the websocket handler/entity method (verify how to invoke from a custom integration: calling `entity.async_move_todo_item` via the entity component is the likely route).
+- Rule: the **canonical order** is the order of the highest-priority endpoint (per the tiebreak list) whose order changed since the last sync; if none changed, keep the stored order. Apply it only to endpoints that support move; others are left as they are (their order is not changed, but items are still synced).
+- Store `order: [canonical_id, ...]` per group, and per-endpoint last-seen order, so order changes can be detected as a change (like any other field).
+- Risks: order-only edits do not change entity state, so they are only noticed on the 5-minute poll; new items land at the end of the other lists and are then moved; iCloud order may be unmovable, so Home Assistant/Google may end up ordered differently from iCloud. Document this clearly.
+- Make order sync an option (default on) so it can be disabled if it causes churn. Treat it as a late implementation phase, after core field sync is solid.
+
+### 7.3 Duplicate titles: what I meant
+On first run or forced rebuild we link items across lists by title. If a list holds two items called "Milk", we cannot know which "Milk" on list A is which on list B. Your rule: they are separate items. To link them anyway, pair them one-to-one: the first "Milk" on each side, the second "Milk" on each side, and so on, using a stable ordering (list order, then due date). The pairing may be "wrong" in that the first Milk in Google might have been meant as the second in iCloud, but since both are called Milk the only visible effect is that description/due date follow the tiebreak winner for that pair. Extra duplicates (3 on one side, 2 on another) get a new counterpart created for the surplus. After linking, identity is by stored IDs, so it never re-pairs.
+
+### 7.4 Storage: more for reconciliation and debugging
+Add per group (in addition to section 3.2):
+- `schema_version`, integration version, and `created_at`.
+- Settings snapshot: entity IDs, tiebreak order, retention days.
+- Per item: `ids` per endpoint, `base` values, `base_hash`, per-endpoint last-seen values/hashes, `last_changed_by`, `last_changed_at`, `first_seen_on`, `link_method` (`uid`, `title_match`, `created`), `pending` write queue with retry counts, `conflicts` history (last N: field, winner, losers, cycle id).
+- Tombstones: canonical id, ids, last base values (so a delete-vs-edit decision and a restore are possible), `deleted_in`, `deleted_at`, `expires_at` (30 days).
+- Group-level: `order`, per-endpoint last-seen order, `last_sync_at`, `last_sync_result`, cycle counter, rolling log of the last N cycles (counts of creates/updates/deletes/conflicts/errors), bootstrap/rebuild history.
+- Expose all of it through the diagnostics platform (redacting nothing sensitive beyond entity-ish identifiers; task text may be personal, so redact summaries/descriptions in diagnostics by default).
+- Keep the file bounded (cap logs, GC expired tombstones).
+
+### 7.5 Naming ideas
+The tool links exactly one Google Tasks list, one iCloud Reminders list and one Home Assistant list. Ideas, with a suggested domain:
+- **Tri-List Sync** (`tri_list_sync`)
+- **Triple Todo Sync** (`triple_todo_sync`)
+- **Todo Triangle** (`todo_triangle`)
+- **ListLink** (`listlink`) / **Todo Link** (`todo_link`)
+- **Linked Todo Lists** (`linked_todo_lists`)
+- **Three-Way Todo Sync** (`three_way_todo_sync`): the most descriptive, my pick
+- Keep `google_tasks_icloud_reminders_sync`: ties the name to two providers and excludes the HA side, so less good.
+Domain names are permanent once users install, so choose before coding. HA domains must be lowercase snake_case and unique (check it does not clash with an existing core integration).
+
+### 7.6 Remaining questions
+1. Pick a name (7.5).
+2. Order sync (7.2): OK that iCloud (and any endpoint without move support) keeps its own order, and that order-only edits are detected only on the 5-minute poll?
+3. Duplicate pairing (7.3): OK as described?
+4. Diagnostics (7.4): is redacting item text by default fine?
+5. Do you want a Home Assistant **sensor/binary_sensor** per group (last sync time, status, pending conflicts) in v1, or only services/events and diagnostics?
+6. Do you want persistent notifications / repair issues when the mass-delete guard trips or an endpoint is unavailable for a long time?
 
 ## 8. Definition of done (v1)
 - Edits to title, status, due date and description in any of the three lists converge on all three within one poll cycle, without duplicates, flapping or loops.
