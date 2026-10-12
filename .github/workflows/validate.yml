@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_integration: ${{ steps.detect.outputs.has_integration }}
+      has_tests: ${{ steps.detect.outputs.has_tests }}
     steps:
       - uses: actions/checkout@v7
       - id: detect
@@ -24,6 +25,11 @@ jobs:
             echo "has_integration=true" >> "$GITHUB_OUTPUT"
           else
             echo "has_integration=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -n "$(find tests -type f -print -quit 2>/dev/null)" ]; then
+            echo "has_tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_tests=false" >> "$GITHUB_OUTPUT"
           fi
 
   hassfest:
@@ -59,7 +65,7 @@ jobs:
 
   tests:
     needs: check
-    if: needs.check.outputs.has_integration == 'true' && hashFiles('tests/**') != ''
+    if: needs.check.outputs.has_integration == 'true' && needs.check.outputs.has_tests == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
