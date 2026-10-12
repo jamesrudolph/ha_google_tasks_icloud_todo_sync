@@ -13,6 +13,5 @@ Compliance checklist (last reviewed against the docs):
 - README at repo root; GitHub releases are published by `.github/workflows/release.yml` - OK
 - HACS and hassfest validation run in `.github/workflows/validate.yml` - OK
 - Brand images (`icon.png`, optionally `logo.png`) in
-  `custom_components/ha_google_tasks_icloud_todo_sync/brand/` - OK (added; was required before
-  submitting to the HACS default list; the HACS action checks for brand images)
+  `custom_components/ha_google_tasks_icloud_todo_sync/brand/` - OK (the HACS action checks for brand images)
 - GitHub repository description and topics must be set in repo settings (not verifiable from files)
