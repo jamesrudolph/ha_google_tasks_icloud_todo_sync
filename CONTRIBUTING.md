@@ -1,5 +1,7 @@
 # Contributing
 
+> Publishing to HACS: see [AGENTS.md](AGENTS.md) and https://hacs.xyz/docs/publish/
+
 See [PLAN.md](PLAN.md) for design and scope. Run `ruff check .` and `pytest` before opening a PR.
 
 ## Releasing
