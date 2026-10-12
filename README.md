@@ -30,7 +30,7 @@ A Home Assistant custom integration that keeps **one Google Tasks list**, **one 
 ### HACS (recommended)
 
 1. In HACS, open the menu → **Custom repositories**.
-2. Add `https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders` as an **Integration**.
+2. Add `https://github.com/jamesrudolph/ha_google_tasks_icloud_todo_sync` as an **Integration**.
 3. Search for **Home Assistant Google Tasks Apple iCloud Todo List Sync**, download it, and restart Home Assistant.
 
 ### Manual
@@ -85,10 +85,10 @@ Releases are tag-driven; see [CONTRIBUTING.md](CONTRIBUTING.md#releasing).
 
 [MIT](LICENSE)
 
-[release-badge]: https://img.shields.io/github/v/release/jamesrudolph/sync-google-tasks-icloud-reminders
-[release]: https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders/releases
-[license-badge]: https://img.shields.io/github/license/jamesrudolph/sync-google-tasks-icloud-reminders
+[release-badge]: https://img.shields.io/github/v/release/jamesrudolph/ha_google_tasks_icloud_todo_sync
+[release]: https://github.com/jamesrudolph/ha_google_tasks_icloud_todo_sync/releases
+[license-badge]: https://img.shields.io/github/license/jamesrudolph/ha_google_tasks_icloud_todo_sync
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-orange.svg
 [hacs]: https://hacs.xyz
-[validate-badge]: https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders/actions/workflows/validate.yml/badge.svg
-[validate]: https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders/actions/workflows/validate.yml
+[validate-badge]: https://github.com/jamesrudolph/ha_google_tasks_icloud_todo_sync/actions/workflows/validate.yml/badge.svg
+[validate]: https://github.com/jamesrudolph/ha_google_tasks_icloud_todo_sync/actions/workflows/validate.yml
