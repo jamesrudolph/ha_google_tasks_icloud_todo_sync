@@ -1,0 +1,53 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Create sync group",
+        "description": "Select the three existing to-do lists to keep in sync.",
+        "data": {
+          "group_name": "Group name",
+          "home_assistant_entity_id": "Home Assistant to-do list",
+          "google_entity_id": "Google Tasks to-do list",
+          "icloud_entity_id": "iCloud Reminders to-do list"
+        }
+      }
+    },
+    "error": {
+      "duplicate_entities": "Each selected to-do list must be different.",
+      "unsupported_entities": "Each selected to-do list must support create, update, and delete.",
+      "entity_already_configured": "A selected to-do list already belongs to another sync group."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sync options",
+        "data": {
+          "priority_1": "Highest tiebreak priority",
+          "priority_2": "Second tiebreak priority",
+          "priority_3": "Third tiebreak priority",
+          "poll_interval": "Poll interval (minutes)",
+          "debounce_seconds": "Debounce time (seconds)",
+          "tombstone_days": "Tombstone retention (days)",
+          "mass_delete_count": "Mass-delete guard count threshold",
+          "mass_delete_percent": "Mass-delete guard percent threshold",
+          "unavailable_grace_minutes": "Unavailable grace period (minutes)",
+          "order_sync": "Sync item order when supported"
+        }
+      }
+    },
+    "error": {
+      "duplicate_tiebreak": "Each tiebreak priority must use a different endpoint."
+    }
+  },
+  "issues": {
+    "mass_delete_guard": {
+      "title": "Mass delete guard blocked sync",
+      "description": "{details}"
+    },
+    "endpoint_unavailable": {
+      "title": "A synced to-do list is unavailable",
+      "description": "{details}"
+    }
+  }
+}
