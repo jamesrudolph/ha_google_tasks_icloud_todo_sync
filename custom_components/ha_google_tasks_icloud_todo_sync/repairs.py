@@ -11,7 +11,7 @@ from .const import (
     ISSUE_ID_UNAVAILABLE,
 )
 
-_LEARN_MORE_URL = "https://github.com/jamesrudolph/sync-google-tasks-icloud-reminders"
+_LEARN_MORE_URL = "https://github.com/jamesrudolph/ha_google_tasks_icloud_todo_sync"
 
 
 def _issue_id(prefix: str, entry_id: str) -> str:
