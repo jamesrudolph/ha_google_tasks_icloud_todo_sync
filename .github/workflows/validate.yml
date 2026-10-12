@@ -17,7 +17,7 @@ jobs:
     outputs:
       has_integration: ${{ steps.detect.outputs.has_integration }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: detect
         run: |
           if ls custom_components/*/manifest.json >/dev/null 2>&1; then
@@ -31,7 +31,7 @@ jobs:
     if: needs.check.outputs.has_integration == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: home-assistant/actions/hassfest@master
 
   hacs:
@@ -39,7 +39,7 @@ jobs:
     if: needs.check.outputs.has_integration == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: hacs/action@main
         with:
           category: integration
@@ -49,7 +49,7 @@ jobs:
     if: needs.check.outputs.has_integration == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/ruff-action@v3
         with:
           args: check .
@@ -62,7 +62,7 @@ jobs:
     if: needs.check.outputs.has_integration == 'true' && hashFiles('tests/**') != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
