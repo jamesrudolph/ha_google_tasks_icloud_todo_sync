@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.2.3 or 1.2.3-beta.1 (tag v<version> is created)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,8 +23,12 @@ jobs:
       - name: Set version and build zip
         env:
           DOMAIN: ha_google_tasks_icloud_todo_sync
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          RAW="${INPUT_VERSION:-$GITHUB_REF_NAME}"
+          VERSION="${RAW#v}"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+.*$ ]] || { echo "Invalid version: $VERSION"; exit 1; }
+          echo "TAG=v${VERSION}" >> "$GITHUB_ENV"
           MANIFEST="custom_components/${DOMAIN}/manifest.json"
           test -f "$MANIFEST" || { echo "Missing $MANIFEST"; exit 1; }
           python3 - "$MANIFEST" "$VERSION" <<'PY'
@@ -37,6 +47,8 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           files: ha_google_tasks_icloud_todo_sync.zip
           generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(env.TAG, '-') }}
