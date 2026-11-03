@@ -163,16 +163,24 @@ class TodoSyncAdapter:
                 await asyncio.sleep(CREATE_UID_DELAY)
                 await self._async_refresh(entity)
             after_items = entity.todo_items or []
-            for item in after_items:
-                if item.uid and item.uid not in before:
-                    return item.uid
+            candidates = [
+                item
+                for item in after_items
+                if item.uid and item.uid not in before and _to_record(item) == record
+            ]
+            if len(candidates) > 1:
+                raise HomeAssistantError(
+                    f"Unable to uniquely determine created uid for {entity_id}"
+                )
+            if candidates:
+                return candidates[0].uid
         raise HomeAssistantError(f"Unable to determine created uid for {entity_id}")
 
     async def _async_refresh(self, entity: TodoListEntity) -> None:
         """Ask the entity to refresh so freshly created items become visible."""
         try:
             await entity.async_update_ha_state(force_refresh=True)
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.debug("Refresh failed for %s", entity.entity_id, exc_info=True)
 
     async def async_update(
