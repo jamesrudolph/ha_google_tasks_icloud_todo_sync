@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -24,6 +25,9 @@ except ModuleNotFoundError:  # pragma: no cover
     from homeassistant.components.todo import TodoItem, TodoListEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+CREATE_UID_ATTEMPTS = 5
+CREATE_UID_DELAY = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,15 +158,22 @@ class TodoSyncAdapter:
         before = [item.uid for item in entity.todo_items or [] if item.uid is not None]
         await entity.async_create_todo_item(_to_todo_item(record))
         await self.hass.async_block_till_done()
-        after_items = entity.todo_items or []
-        for item in after_items:
-            if item.uid and item.uid not in before:
-                return item.uid
-
-        for item in after_items:
-            if item.uid and _to_record(item) == record:
-                return item.uid
+        for attempt in range(CREATE_UID_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(CREATE_UID_DELAY)
+                await self._async_refresh(entity)
+            after_items = entity.todo_items or []
+            for item in after_items:
+                if item.uid and item.uid not in before:
+                    return item.uid
         raise HomeAssistantError(f"Unable to determine created uid for {entity_id}")
+
+    async def _async_refresh(self, entity: TodoListEntity) -> None:
+        """Ask the entity to refresh so freshly created items become visible."""
+        try:
+            await entity.async_update_ha_state(force_refresh=True)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Refresh failed for %s", entity.entity_id, exc_info=True)
 
     async def async_update(
         self, entity_id: str, uid: str, record: CanonicalTodoItem
